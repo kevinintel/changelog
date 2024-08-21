@@ -7,31 +7,84 @@ from datetime import datetime, timedelta
 
 # Constants
 REPO_OWNER = "opea-project"
-REPO_NAME = "GenAIExamples"
+REPO_NAME = "GenAIEval"
 TOKEN = "my_key"
-DAYS_AGO = 7
-
+# DAYS_AGO = 2
 
 headers = {
     "Authorization": f"Bearer {TOKEN}",
-    "Accept": "application/vnd.github+json",
+    "Accept": "application/vnd.github.v3+json",
     "X-GitHub-Api-Version": "2022-11-28",
 }
 
 def fetch_recent_merged_prs():
-    end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=DAYS_AGO)
-    print ("fetch commits from "+ str(start_date) +"in https://github.com/"+REPO_OWNER+"/"+REPO_NAME )
+#    end_date = datetime.utcnow()
+#    start_date = end_date - timedelta(days=DAYS_AGO)
+#    specific_time = datetime(2024, 8, 20, 15, 30, 45)  # Year, Month, Day, Hour, Minute, Second
+    end_date = datetime(2024,8,21,23,59,59)
+    start_date = datetime(2024,7,27,0,0,0)
 
-    response = requests.get(
-        f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/pulls?state=closed&since={start_date.isoformat()}Z",
-        headers=headers,
-    )
+    print ("fetch commits from "+ str(start_date)+" to "+str(end_date) +" in https://github.com/"+REPO_OWNER+"/"+REPO_NAME )
 
-    if response.status_code != 200:
-        raise Exception("Error fetching PRs from GitHub API!")
+    params = {
+        "per_page": 100,  # Number of commits per page (max 100)
+        "page": 1,         # Page number to retrieve
+#        "since": "2024-08-19T00:00:00Z",  # Start date
+#        "until": "2024-08-20T23:59:59Z",  # End date
+    }
 
-    return [pr for pr in response.json() if pr["merged_at"]]
+
+
+    all_merged_prs = []
+    page = 1
+    while True :
+        params['page'] = page
+        print("Page:", params['page'])
+        response = requests.get(
+            f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/pulls?state=closedZ",
+#            f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/pulls?state=closed&since={start_date.isoformat()}&until={end_date.isoformat()}Z",
+            headers=headers,
+            params=params
+        )
+
+        if response.status_code != 200:
+            raise Exception("Error fetching PRs from GitHub API!")
+
+        json_file = response.json()
+        if not json_file:
+            break
+
+        if len(json_file) == 0:
+            break
+
+        print(page)
+
+        prs= [pr for pr in json_file if pr["merged_at"]]
+        print("merged prs: "+str(len(prs)))
+        correct_prs=[]
+
+        time_correct_pr = 0
+        for pr in json_file: 
+            if pr["merged_at"]:
+                merged_time_str = pr["merged_at"]
+                merged_time = datetime.fromisoformat(merged_time_str[:-1])
+                if start_date <= merged_time and end_date >= merged_time:
+                    time_correct_pr= time_correct_pr+1
+                    correct_prs.append(pr)
+                    print(f"PR #{pr['number']} was merged at: {merged_time}")
+                    
+#                print(f"PR #{pr['number']} was merged at: {merged_time}")
+
+        print("prs between start and end date: "+str(time_correct_pr))
+
+        if time_correct_pr==0:
+            break
+
+        page= page+1
+        all_merged_prs.extend(correct_prs)
+             
+    print("====================extract json done=====================")
+    return all_merged_prs
 
 def extract_commit_details_from_prs(prs):
     commit_details = []
@@ -43,6 +96,7 @@ def extract_commit_details_from_prs(prs):
         branch_name = pr["head"]["ref"]
         issue_numbers = re.findall(r"(www-\d+|web-\d+)", branch_name)
 
+#        print(commit_message)
         # If no issue numbers are found, add the PR details without issue numbers and URLs
         if not issue_numbers:
             commit_details.append(
@@ -63,7 +117,7 @@ def generate_changelog_with_openai(commit_details):
         commit_url = "https://github.com/"+REPO_OWNER+"/"+REPO_NAME+"/commit/"+first_six_digits
         base_message = f"{details['message']}([{first_six_digits}]({commit_url}))"
         commit_messages.append(base_message)
-#        print(base_message)
+        print(base_message)
 
     commit_list = "\n".join(commit_messages)
 
@@ -88,8 +142,8 @@ And here are the commits:
         commit_list
     )
 
-
-    print (prompt)
+    print("==================prompt========================")
+#    print (prompt)
 #    openai.api_key = OPENAI_API_KEY
 #    messages = [{"role": "user", "content": prompt}]
 #    response = openai.ChatCompletion.create(model="gpt-4", messages=messages)
