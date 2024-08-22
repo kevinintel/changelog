@@ -1,15 +1,16 @@
 import os
 import requests
 import re
+import time
+from collections import Counter
 #import opeanai
 from datetime import datetime, timedelta
-
+from requests.exceptions import SSLError
 
 # Constants
 REPO_OWNER = "opea-project"
-REPO_NAME = "GenAIEval"
+REPO_NAME = "GenAIExamples"
 TOKEN = "my_key"
-# DAYS_AGO = 2
 
 headers = {
     "Authorization": f"Bearer {TOKEN}",
@@ -17,21 +18,22 @@ headers = {
     "X-GitHub-Api-Version": "2022-11-28",
 }
 
-def fetch_recent_merged_prs():
+params = {
+    "per_page": 100,  # Number of commits per page (max 100)
+    "page": 1,         # Page number to retrieve
+# time params not working
+#        "since": "2024-08-19T00:00:00Z",  # Start date
+#        "until": "2024-08-20T23:59:59Z",  # End date
+}
+
+def fetch_prs(all_prs = False):
 #    end_date = datetime.utcnow()
 #    start_date = end_date - timedelta(days=DAYS_AGO)
 #    specific_time = datetime(2024, 8, 20, 15, 30, 45)  # Year, Month, Day, Hour, Minute, Second
     end_date = datetime(2024,8,21,23,59,59)
-    start_date = datetime(2024,7,27,0,0,0)
+    start_date = datetime(2024,7,28,0,0,0)
 
     print ("fetch commits from "+ str(start_date)+" to "+str(end_date) +" in https://github.com/"+REPO_OWNER+"/"+REPO_NAME )
-
-    params = {
-        "per_page": 100,  # Number of commits per page (max 100)
-        "page": 1,         # Page number to retrieve
-#        "since": "2024-08-19T00:00:00Z",  # Start date
-#        "until": "2024-08-20T23:59:59Z",  # End date
-    }
 
 
 
@@ -59,31 +61,41 @@ def fetch_recent_merged_prs():
 
         print(page)
 
-        prs= [pr for pr in json_file if pr["merged_at"]]
-        print("merged prs: "+str(len(prs)))
+#        prs= [pr for pr in json_file if pr["merged_at"]]
+#        print("merged prs: "+str(len(prs)))
         correct_prs=[]
 
-        time_correct_pr = 0
         for pr in json_file: 
-            if pr["merged_at"]:
-                merged_time_str = pr["merged_at"]
-                merged_time = datetime.fromisoformat(merged_time_str[:-1])
-                if start_date <= merged_time and end_date >= merged_time:
-                    time_correct_pr= time_correct_pr+1
+            if pr["merged_at"] or all_prs:
+                time_str = ""
+                if all_prs:
+                    time_str = pr["created_at"]
+                else:
+                    #only get merged pr 
+                    time_str = pr["merged_at"]
+
+                merged_or_created_time = datetime.fromisoformat(time_str[:-1])
+                
+
+                if start_date <= merged_or_created_time and end_date >= merged_or_created_time:
                     correct_prs.append(pr)
-                    print(f"PR #{pr['number']} was merged at: {merged_time}")
-                    
+                    if all_prs:
+                        print(f"PR #{pr['number']} was created at: {merged_or_created_time}")
+                    else:
+                        print(f"PR #{pr['number']} was merged at: {merged_or_created_time}")
+                else:
+                    print(f"PR #{pr['number']} not in time: {merged_or_created_time}")   
 #                print(f"PR #{pr['number']} was merged at: {merged_time}")
 
-        print("prs between start and end date: "+str(time_correct_pr))
+        print("prs between start and end date: "+str(len(correct_prs)))
 
-        if time_correct_pr==0:
+        if len(correct_prs) ==0:
             break
 
         page= page+1
         all_merged_prs.extend(correct_prs)
              
-    print("====================extract json done=====================")
+    print("====================extract json done===================== size is "+str(len(all_merged_prs)))
     return all_merged_prs
 
 def extract_commit_details_from_prs(prs):
@@ -110,6 +122,58 @@ def extract_commit_details_from_prs(prs):
 
     return commit_details
 
+def extract_external_contributors_from_prs(prs):
+    ex_contributors = []
+    print("extract ex contributors")
+    for pr in prs:
+        number = pr["number"]
+#        print("pr "+str(number))
+
+        while True:
+            try:
+                response = requests.get(
+                    f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/pulls/"+str(number)+"/commits",
+                    headers=headers,
+#            params=params
+                )
+#        print(" 111 "+ "https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/pulls/{number}/commitsZ")
+
+
+#            if response.status_code != 200:
+#                raise Exception("Error fetching PRs from GitHub API!")
+
+                json_file = response.json()
+                if not json_file:
+                    print("no json file")
+
+                if len(json_file) == 0:
+                    print("json file len =0")
+
+                for commit in json_file:
+                    committer_email = commit['commit']['committer']['email']
+                    name = commit['commit']['committer']['name']
+                    if all(substring not in committer_email for substring in ["intel.com", "noreply@github.com", "users.noreply.github.com"]):
+                        ex_contributors.append(
+                            {
+                                "number": number,
+                                "email":  committer_email,
+                                "name":   name,
+                            }
+                        )
+                        print("pr "+str(number)+" committer "+str(committer_email)+" name "+name)         
+                break
+
+            except SSLError as e:
+                print(f"SSL error occurred: {e}")
+                print("sleep 5s")
+                time.sleep(5)
+              
+
+    print ("ex contributor size: "+ str(len(Counter(item["name"] for item in ex_contributors))))
+    return ex_contributors
+
+
+
 def generate_changelog_with_openai(commit_details):
     commit_messages = []
     for details in commit_details:
@@ -120,29 +184,30 @@ def generate_changelog_with_openai(commit_details):
         print(base_message)
 
     commit_list = "\n".join(commit_messages)
+    return commit_list
 
 #Add ChatQnA instructions for AIPC([26d4ff](https://github.com/opea-project/GenAIExamples/commit/26d4ff11ffd323091d80efdd3f65e4c330b68840))
-    prompt = """
-Generate a changelog for the web version of the OPEA Project, which offers Enterprise AI Solution.
-The changelog should:
-1. Classification into 3 categories: Features, Deployment, CI/UT. If commit messages contains "UT", "test", please classified as CI/UT. If commit messages contains "k8s", "Kubernenets", please classified as Deployment.
-2. Formatting: using Markdown formatting
+#    prompt = """
+#Generate a changelog for the web version of the OPEA Project, which offers Enterprise AI Solution.
+#The changelog should:
+#1. Classification into 3 categories: Features, Deployment, CI/UT. If commit messages contains "UT", "test", please classified as CI/UT. If commit messages contains "k8s", "Kubernenets", please classified as Deployment.
+#2. Formatting: using Markdown formatting
 
-Here's a good example to follow:
-- Features
-    - Add ChatQnA instructions for AIPC([26d4ff1](https://github.com/opea-project/GenAIExamples/commit/26d4ff11ffd323091d80efdd3f65e4c330b68840))
-- Deployment
-    - Add ChatQnA instructions for AIPC([26d4ff1](https://github.com/opea-project/GenAIExamples/commit/26d4ff11ffd323091d80efdd3f65e4c330b68840))
-- CI/UT
-    - Add ChatQnA instructions for AIPC([26d4ff1](https://github.com/opea-project/GenAIExamples/commit/26d4ff11ffd323091d80efdd3f65e4c330b68840))
+#Here's a good example to follow:
+#- Features
+#    - Add ChatQnA instructions for AIPC([26d4ff1](https://github.com/opea-project/GenAIExamples/commit/26d4ff11ffd323091d80efdd3f65e4c330b68840))
+#- Deployment
+#    - Add ChatQnA instructions for AIPC([26d4ff1](https://github.com/opea-project/GenAIExamples/commit/26d4ff11ffd323091d80efdd3f65e4c330b68840))
+#- CI/UT
+#    - Add ChatQnA instructions for AIPC([26d4ff1](https://github.com/opea-project/GenAIExamples/commit/26d4ff11ffd323091d80efdd3f65e4c330b68840))
 
-And here are the commits:
-{}
-    """.format(
-        commit_list
-    )
+#And here are the commits:
+#{}
+#    """.format(
+#        commit_list
+#    )
 
-    print("==================prompt========================")
+#    print("==================prompt========================")
 #    print (prompt)
 #    openai.api_key = OPENAI_API_KEY
 #    messages = [{"role": "user", "content": prompt}]
@@ -158,9 +223,13 @@ And here are the commits:
 if __name__ == "__main__":
     try:
         print("⏳ Generating changelog, it can take a few minutes...")
-        prs = fetch_recent_merged_prs()
-        commit_details = extract_commit_details_from_prs(prs)
-        changelog = generate_changelog_with_openai(commit_details)
-        print(" Generated prompt !")
+#extract merged prs
+#        prs = fetch_prs(False)
+#        commit_details = extract_commit_details_from_prs(prs)
+#extract external contributors
+        prs = fetch_prs(True)
+        extract_external_contributors_from_prs(prs)
+#        changelog = generate_changelog_with_openai(commit_details)
+#        print(" Generated prompt !")
     except Exception as e:
         print(str(e))
