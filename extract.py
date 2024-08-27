@@ -158,19 +158,23 @@ def extract_external_contributors_from_prs(prs):
                     author = commit_info['author']
                     committer_email = author['email']
                     name = author['name']
-#                    if number == 555:
+                    if number == 555:
                         #print(commit)
-#                        print(" num "+str(number)+" "+committer_email+" sha "+commit['sha'])
+                        print(" num "+str(number)+" "+committer_email+" sha "+commit['sha'])
                     #noreply@github.com
-                    if all(substring not in committer_email for substring in ["intel.com", "pre-commit-ci"]):
-                        ex_contributors.append(
-                            {
-                                "number": number,
-                                "email":  committer_email,
-                                "name":   name,
-                            }
-                        )
-                        print("external pr "+str(number)+" author "+str(committer_email)+" name "+name)
+
+                    # keep users from intel because github has strange noreply email
+                    if all(substring not in committer_email for substring in ["pre-commit-ci"]):
+                        ex_names = [contributor["name"] for contributor in ex_contributors]
+                        if name not in ex_names:    
+                            ex_contributors.append(
+                                {
+                                    "number": number,
+                                    "email":  committer_email,
+                                    "name":   name,
+                                }
+                            )
+                            print("pr "+str(number)+" author "+str(committer_email)+" name "+name)
                 break
 
             except SSLError as e:
@@ -179,6 +183,8 @@ def extract_external_contributors_from_prs(prs):
                 time.sleep(5)
               
 
+    #remove intel users
+    ex_contributors = [contributor for contributor in ex_contributors if "intel.com" not in contributor["email"]]
    
     unique_names = set(item["name"] for item in ex_contributors)
     print("ex contributor size: "+ str(len(unique_names)))
