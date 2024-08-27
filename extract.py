@@ -9,8 +9,8 @@ from requests.exceptions import SSLError
 
 # Constants
 REPO_OWNER = "opea-project"
-REPO_NAME = "GenAIExamples"
-TOKEN = "my_key"
+REPO_NAME = "GenAIComps"
+TOKEN = "your_key"
 
 headers = {
     "Authorization": f"Bearer {TOKEN}",
@@ -30,12 +30,16 @@ def fetch_prs(all_prs = False):
 #    end_date = datetime.utcnow()
 #    start_date = end_date - timedelta(days=DAYS_AGO)
 #    specific_time = datetime(2024, 8, 20, 15, 30, 45)  # Year, Month, Day, Hour, Minute, Second
-    end_date = datetime(2024,8,21,23,59,59)
-    start_date = datetime(2024,7,28,0,0,0)
+    end_date = datetime(2024,8,27,23,59,59)
+    start_date = datetime(2024,8,10,0,0,0)
 
     print ("fetch commits from "+ str(start_date)+" to "+str(end_date) +" in https://github.com/"+REPO_OWNER+"/"+REPO_NAME )
 
-
+    request_str=""
+    if all_prs:
+        request_str="https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/pulls"
+    else:
+        request_str="https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/pulls?state=closedZ"
 
     all_merged_prs = []
     page = 1
@@ -43,7 +47,7 @@ def fetch_prs(all_prs = False):
         params['page'] = page
         print("Page:", params['page'])
         response = requests.get(
-            f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/pulls?state=closedZ",
+            f"{request_str}".format(REPO_OWNER=REPO_OWNER, REPO_NAME=REPO_NAME),
 #            f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/pulls?state=closed&since={start_date.isoformat()}&until={end_date.isoformat()}Z",
             headers=headers,
             params=params
@@ -124,7 +128,7 @@ def extract_commit_details_from_prs(prs):
 
 def extract_external_contributors_from_prs(prs):
     ex_contributors = []
-    print("extract ex contributors")
+    print("===========extract ex contributors===========")
     for pr in prs:
         number = pr["number"]
 #        print("pr "+str(number))
@@ -150,9 +154,15 @@ def extract_external_contributors_from_prs(prs):
                     print("json file len =0")
 
                 for commit in json_file:
-                    committer_email = commit['commit']['committer']['email']
-                    name = commit['commit']['committer']['name']
-                    if all(substring not in committer_email for substring in ["intel.com", "noreply@github.com", "users.noreply.github.com"]):
+                    commit_info = commit['commit']
+                    author = commit_info['author']
+                    committer_email = author['email']
+                    name = author['name']
+#                    if number == 555:
+                        #print(commit)
+#                        print(" num "+str(number)+" "+committer_email+" sha "+commit['sha'])
+                    #noreply@github.com
+                    if all(substring not in committer_email for substring in ["intel.com", "pre-commit-ci"]):
                         ex_contributors.append(
                             {
                                 "number": number,
@@ -160,7 +170,7 @@ def extract_external_contributors_from_prs(prs):
                                 "name":   name,
                             }
                         )
-                        print("pr "+str(number)+" committer "+str(committer_email)+" name "+name)         
+                        print("external pr "+str(number)+" author "+str(committer_email)+" name "+name)
                 break
 
             except SSLError as e:
@@ -169,7 +179,11 @@ def extract_external_contributors_from_prs(prs):
                 time.sleep(5)
               
 
-    print ("ex contributor size: "+ str(len(Counter(item["name"] for item in ex_contributors))))
+   
+    unique_names = set(item["name"] for item in ex_contributors)
+    print("ex contributor size: "+ str(len(unique_names)))
+    for name in unique_names:
+        print(name)
     return ex_contributors
 
 
