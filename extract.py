@@ -9,8 +9,8 @@ from requests.exceptions import SSLError
 
 # Constants
 REPO_OWNER = "opea-project"
-REPO_NAME = "GenAIComps"
-TOKEN = "your_key"
+REPO_NAME = "GenAIExamples"
+TOKEN = "your_token"
 
 headers = {
     "Authorization": f"Bearer {TOKEN}",
@@ -30,8 +30,8 @@ def fetch_prs(all_prs = False):
 #    end_date = datetime.utcnow()
 #    start_date = end_date - timedelta(days=DAYS_AGO)
 #    specific_time = datetime(2024, 8, 20, 15, 30, 45)  # Year, Month, Day, Hour, Minute, Second
-    end_date = datetime(2024,8,27,23,59,59)
-    start_date = datetime(2024,8,10,0,0,0)
+    end_date = datetime(2024,9,10,23,59,59)
+    start_date = datetime(2024,8,27,0,0,0)
 
     print ("fetch commits from "+ str(start_date)+" to "+str(end_date) +" in https://github.com/"+REPO_OWNER+"/"+REPO_NAME )
 
@@ -194,7 +194,8 @@ def extract_external_contributors_from_prs(prs):
 
 
 
-def generate_changelog_with_openai(commit_details):
+def generate_changelog(commit_details):
+    print("=====================generate_changelog==========================")
     commit_messages = []
     for details in commit_details:
         first_six_digits = details['merge_commit_sha'][:7]
@@ -244,11 +245,12 @@ if __name__ == "__main__":
     try:
         print("⏳ Generating changelog, it can take a few minutes...")
 #extract merged prs
-#        prs = fetch_prs(False)
-#        commit_details = extract_commit_details_from_prs(prs)
+        prs = fetch_prs(False)
+        commit_details = extract_commit_details_from_prs(prs)
+        commit_list = generate_changelog(commit_details)
 #extract external contributors
-        prs = fetch_prs(True)
-        extract_external_contributors_from_prs(prs)
+#        prs = fetch_prs(True)
+#        extract_external_contributors_from_prs(prs)
 #        changelog = generate_changelog_with_openai(commit_details)
 #        print(" Generated prompt !")
     except Exception as e:
